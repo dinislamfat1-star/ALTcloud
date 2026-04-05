@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Чат — вход по имени</title>
+    <title>Чат с уведомлениями</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0a0f1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        body { font-family: system-ui, sans-serif; background: #0a0f1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .app { width: 100%; max-width: 600px; height: 100vh; display: flex; flex-direction: column; background: #111827; overflow: hidden; }
         .header { background: #1f2937; color: white; padding: 16px; text-align: center; font-weight: bold; font-size: 1.3rem; border-bottom: 1px solid #374151; display: flex; justify-content: space-between; align-items: center; }
         .header button { background: #ef4444; border: none; color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; cursor: pointer; }
@@ -22,26 +22,35 @@
         .input-area { display: flex; padding: 12px; background: #1f2937; gap: 8px; border-top: 1px solid #374151; }
         .input-area input { flex: 1; padding: 10px; border: none; border-radius: 24px; background: #374151; color: white; outline: none; font-size: 1rem; }
         .input-area button { background: #2563eb; border: none; color: white; width: 44px; border-radius: 44px; font-size: 1.5rem; cursor: pointer; }
-        .auth-box { background: #1f2937; padding: 24px; border-radius: 24px; text-align: center; color: white; margin: 20px; }
-        .auth-box input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 24px; border: none; background: #374151; color: white; text-align: center; font-size: 1rem; }
-        .auth-box button { background: #2563eb; border: none; color: white; padding: 10px 20px; border-radius: 32px; font-size: 1rem; margin: 8px 4px; cursor: pointer; }
-        .auth-box .toggle { background: #4b5563; }
+        .auth-container { display: flex; flex-direction: column; gap: 20px; padding: 20px; }
+        .auth-card { background: #1f2937; padding: 20px; border-radius: 24px; color: white; }
+        .auth-card h3 { margin-bottom: 12px; text-align: center; }
+        .auth-card input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 24px; border: none; background: #374151; color: white; text-align: center; font-size: 1rem; }
+        .auth-card button { background: #2563eb; border: none; color: white; padding: 10px 20px; border-radius: 32px; font-size: 1rem; margin-top: 8px; cursor: pointer; width: 100%; }
+        .error-box { background: #7f1a1a; color: #fecaca; padding: 10px; border-radius: 16px; margin-top: 12px; font-size: 0.8rem; text-align: center; display: none; }
         .status { text-align: center; padding: 8px; font-size: 0.8rem; color: #9ca3af; }
     </style>
 </head>
 <body>
 <div class="app">
     <div class="header">
-        <span>💬 Чат (вход по имени)</span>
+        <span>💬 Чат с пушами</span>
         <button id="logoutBtn" style="display:none;">Выйти</button>
     </div>
-    <div id="authContainer" class="auth-box">
-        <h2 id="formTitle">Вход</h2>
-        <input type="text" id="username" placeholder="Ваше имя (латиница или кириллица)" autocomplete="off">
-        <input type="password" id="password" placeholder="Пароль">
-        <button id="submitBtn">Войти</button>
-        <button id="toggleBtn" class="toggle">Нет аккаунта? Зарегистрироваться</button>
-        <div id="authError" style="color:#f66; margin-top:8px;"></div>
+    <div id="authContainer" class="auth-container">
+        <div class="auth-card">
+            <h3>🔐 Вход</h3>
+            <input type="text" id="loginName" placeholder="Имя">
+            <input type="password" id="loginPassword" placeholder="Пароль">
+            <button id="loginBtn">Войти</button>
+        </div>
+        <div class="auth-card">
+            <h3>📝 Регистрация</h3>
+            <input type="text" id="regName" placeholder="Имя">
+            <input type="password" id="regPassword" placeholder="Пароль">
+            <button id="regBtn">Зарегистрироваться</button>
+        </div>
+        <div id="globalError" class="error-box"></div>
     </div>
     <div id="chatContainer" style="display: none; flex-direction: column; flex:1;">
         <div class="messages" id="messagesList"></div>
@@ -54,7 +63,6 @@
 </div>
 
 <script>
-    // ========== ТВОИ КЛЮЧИ FIREBASE (те же) ==========
     const firebaseConfig = {
         apiKey: "AIzaSyC94FgGHfX7w8dyMnQxiLBPwI66vYuS2r0",
         authDomain: "altcloud-24dc3.firebaseapp.com",
@@ -64,13 +72,11 @@
         messagingSenderId: "335868243516",
         appId: "1:335868243516:web:b8ae386ef64ef51b28dd39"
     };
-    // ================================================
 
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const database = firebase.database();
 
-    // DOM
     const authContainer = document.getElementById('authContainer');
     const chatContainer = document.getElementById('chatContainer');
     const messagesList = document.getElementById('messagesList');
@@ -78,45 +84,35 @@
     const sendBtn = document.getElementById('sendBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const statusDiv = document.getElementById('statusText');
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    const submitBtn = document.getElementById('submitBtn');
-    const toggleBtn = document.getElementById('toggleBtn');
-    const formTitle = document.getElementById('formTitle');
-    const authError = document.getElementById('authError');
+    const globalError = document.getElementById('globalError');
 
-    let isLogin = true;
+    const loginName = document.getElementById('loginName');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginBtn = document.getElementById('loginBtn');
+    const regName = document.getElementById('regName');
+    const regPassword = document.getElementById('regPassword');
+    const regBtn = document.getElementById('regBtn');
+
     let currentUser = null;
     let messagesRef = null;
 
-    // Преобразуем имя в email (добавляем @chat.local)
-    function nameToEmail(name) {
-        return name.trim().toLowerCase() + "@chat.local";
+    function showError(msg) {
+        globalError.style.display = 'block';
+        globalError.textContent = msg;
+        setTimeout(() => globalError.style.display = 'none', 6000);
     }
 
-    // Переключение режима
-    toggleBtn.addEventListener('click', () => {
-        isLogin = !isLogin;
-        if (isLogin) {
-            formTitle.textContent = 'Вход';
-            submitBtn.textContent = 'Войти';
-            toggleBtn.textContent = 'Нет аккаунта? Зарегистрироваться';
-        } else {
-            formTitle.textContent = 'Регистрация';
-            submitBtn.textContent = 'Зарегистрироваться';
-            toggleBtn.textContent = 'Уже есть аккаунт? Войти';
-        }
-        authError.textContent = '';
-    });
+    function nameToEmail(name) {
+        let clean = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!clean) clean = 'user';
+        return clean + '@chat.local';
+    }
 
-    // Отображение сообщений
     function displayMessages(snapshot) {
         if (!messagesList) return;
         messagesList.innerHTML = '';
         const messages = [];
-        snapshot.forEach(child => {
-            messages.push({ id: child.key, ...child.val() });
-        });
+        snapshot.forEach(child => messages.push({ id: child.key, ...child.val() }));
         messages.sort((a,b) => a.timestamp - b.timestamp);
         for (let msg of messages) {
             const div = document.createElement('div');
@@ -124,13 +120,12 @@
             div.className = 'message ' + (isOwn ? 'own' : 'other');
             const nameSpan = document.createElement('div');
             nameSpan.className = 'name';
-            nameSpan.textContent = msg.displayName || msg.username || 'Аноним';
+            nameSpan.textContent = msg.displayName || 'Аноним';
             const textSpan = document.createElement('div');
             textSpan.textContent = msg.text;
             const timeSpan = document.createElement('div');
             timeSpan.className = 'time';
-            const date = new Date(msg.timestamp);
-            timeSpan.textContent = date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            timeSpan.textContent = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             div.appendChild(nameSpan);
             div.appendChild(textSpan);
             div.appendChild(timeSpan);
@@ -139,79 +134,104 @@
         messagesList.scrollTop = messagesList.scrollHeight;
     }
 
-    // Отправка сообщения
-    function sendMessage() {
-        const text = messageInput.value.trim();
-        if (!text || !currentUser) return;
-        messagesRef.push({
-            text: text,
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || currentUser.email.replace("@chat.local", ""),
-            timestamp: Date.now()
-        }).then(() => {
-            messageInput.value = '';
-        }).catch(err => {
-            statusDiv.textContent = 'Ошибка: ' + err.message;
+    function sendPushNotification(messageText, senderName) {
+        const usersRef = firebase.database().ref('users');
+        usersRef.once('value', (snapshot) => {
+            const tokens = [];
+            snapshot.forEach((userSnapshot) => {
+                if (userSnapshot.key !== currentUser.uid) {
+                    const fcmTokens = userSnapshot.child('fcmTokens');
+                    fcmTokens.forEach((tokenSnapshot) => {
+                        tokens.push(tokenSnapshot.val());
+                    });
+                }
+            });
+            if (tokens.length === 0) return;
+
+            fetch('https://fcm.googleapis.com/fcm/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'key=vs6eiAo-ndGANAUsuj8X-QdIIa258RNIy8Y_58r8DVs'
+                },
+                body: JSON.stringify({
+                    registration_ids: tokens,
+                    notification: {
+                        title: senderName,
+                        body: messageText,
+                        icon: '/favicon.ico',
+                        click_action: window.location.href
+                    }
+                })
+            }).catch(err => console.error('Ошибка отправки пуша:', err));
         });
     }
 
-    // Выход
+    function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text || !currentUser) return;
+
+        messagesRef.push({
+            text: text,
+            uid: currentUser.uid,
+            displayName: currentUser.displayName,
+            timestamp: Date.now()
+        }).then(() => {
+            messageInput.value = '';
+            sendPushNotification(text, currentUser.displayName);
+        }).catch(err => statusDiv.textContent = 'Ошибка: ' + err.message);
+    }
+
     function logout() {
         auth.signOut().then(() => window.location.reload());
     }
 
-    // Обработка отправки
-    submitBtn.addEventListener('click', async () => {
-        const rawName = usernameInput.value.trim();
-        const password = passwordInput.value;
-        authError.textContent = '';
-
+    regBtn.addEventListener('click', async () => {
+        const rawName = regName.value.trim();
+        const password = regPassword.value;
         if (!rawName || !password) {
-            authError.textContent = 'Заполните имя и пароль';
+            showError('Заполните имя и пароль');
             return;
         }
-
+        if (password.length < 6) {
+            showError('Пароль должен быть не менее 6 символов');
+            return;
+        }
         const email = nameToEmail(rawName);
-
-        if (!isLogin) {
-            // Регистрация
-            try {
-                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-                // Устанавливаем отображаемое имя (оригинальное, с учётом регистра)
-                await userCredential.user.updateProfile({ displayName: rawName });
-                await userCredential.user.reload();
-                // Вход произойдёт автоматически
-            } catch (err) {
-                if (err.code === 'auth/email-already-in-use') {
-                    authError.textContent = 'Это имя уже занято. Попробуйте другое.';
-                } else {
-                    authError.textContent = err.message;
-                }
-            }
-        } else {
-            // Вход
-            try {
-                await auth.signInWithEmailAndPassword(email, password);
-            } catch (err) {
-                if (err.code === 'auth/user-not-found') {
-                    authError.textContent = 'Пользователь не найден. Зарегистрируйтесь.';
-                } else if (err.code === 'auth/wrong-password') {
-                    authError.textContent = 'Неверный пароль.';
-                } else {
-                    authError.textContent = err.message;
-                }
-            }
+        try {
+            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            await userCredential.user.updateProfile({ displayName: rawName });
+        } catch (err) {
+            let msg = err.message;
+            if (err.code === 'auth/email-already-in-use') msg = 'Это имя уже занято. Выберите другое.';
+            showError(msg);
         }
     });
 
-    // Слушатель состояния входа
+    loginBtn.addEventListener('click', async () => {
+        const rawName = loginName.value.trim();
+        const password = loginPassword.value;
+        if (!rawName || !password) {
+            showError('Заполните имя и пароль');
+            return;
+        }
+        const email = nameToEmail(rawName);
+        try {
+            await auth.signInWithEmailAndPassword(email, password);
+        } catch (err) {
+            let msg = err.message;
+            if (err.code === 'auth/user-not-found') msg = 'Пользователь не найден. Зарегистрируйтесь.';
+            else if (err.code === 'auth/wrong-password') msg = 'Неверный пароль.';
+            showError(msg);
+        }
+    });
+
     auth.onAuthStateChanged((user) => {
         if (user) {
             currentUser = user;
-            // Если по какой-то причине displayName не установлен (старый аккаунт)
             if (!user.displayName) {
-                const nameFromEmail = user.email.replace("@chat.local", "");
-                user.updateProfile({ displayName: nameFromEmail });
+                let name = user.email.replace('@chat.local', '');
+                user.updateProfile({ displayName: name });
             }
             authContainer.style.display = 'none';
             chatContainer.style.display = 'flex';
@@ -223,7 +243,7 @@
             }
         } else {
             currentUser = null;
-            authContainer.style.display = 'block';
+            authContainer.style.display = 'flex';
             chatContainer.style.display = 'none';
             logoutBtn.style.display = 'none';
             statusDiv.textContent = '';
@@ -236,10 +256,41 @@
     });
 
     sendBtn.addEventListener('click', sendMessage);
-    messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
+    messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
     logoutBtn.addEventListener('click', logout);
+</script>
+
+<!-- Firebase Messaging (уведомления) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+<script>
+    const messaging = firebase.messaging();
+
+    function requestPermissionAndGetToken() {
+        Notification.requestPermission().then((permission) => {
+            if (permission === 'granted') {
+                const vapidKey = 'BNZlj2LFTtijpDw0Z47dQ_z-D2sQVS7D2kvXdxwHr1TAJOD1SYOtz3lEpCuleGwClBZfZYmXuVpZ7uLrGGEulVo';
+                messaging.getToken({ vapidKey: vapidKey }).then((token) => {
+                    if (token) {
+                        console.log('Токен устройства:', token);
+                        saveToken(token);
+                    }
+                }).catch(err => console.log('Ошибка получения токена:', err));
+            }
+        });
+    }
+
+    function saveToken(token) {
+        const user = firebase.auth().currentUser;
+        if (user) {
+            firebase.database().ref('users/' + user.uid + '/fcmTokens').push(token);
+        }
+    }
+
+    firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+            requestPermissionAndGetToken();
+        }
+    });
 </script>
 </body>
 </html>
